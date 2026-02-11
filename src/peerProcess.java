@@ -1,4 +1,5 @@
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -21,6 +22,20 @@ public class peerProcess {
 
             Map<Integer, PeerConfigData> peerConfig = PeerConfigData.readInData("PeerInfo.cfg");
             System.out.println(peerConfig);
+
+            FileLogger fileLogger = new FileLogger(peerProcessId);
+            fileLogger.logConnectionTo(1002);
+            fileLogger.logConnectionFrom(1010);
+            fileLogger.logPreferredNeighbors(List.of(1002, 1003, 1004));
+            fileLogger.logOptimisticallyUnchokedNeighbor(1005);
+            fileLogger.logUnchokedBy(1002);
+            fileLogger.logChokedBy(1003);
+            fileLogger.logReceivedHave(1004, 7);
+            fileLogger.logReceivedInterested(1005);
+            fileLogger.logReceivedNotInterested(1006);
+            fileLogger.logDownloadedPiece(7, 1004, 12);
+            fileLogger.logDownloadedCompleteFile();
+
         } catch (NumberFormatException e) {
             throw new RuntimeException("Peer process id must be an integer");
         } catch (IOException e) {
