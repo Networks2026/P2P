@@ -1,5 +1,4 @@
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
 
 public class peerProcess {
@@ -13,28 +12,21 @@ public class peerProcess {
             int peerProcessId = Integer.parseInt(args[0]);
             System.out.println("Starting Peer Process " + peerProcessId);
 
-            CommonConfig commonConfig = CommonConfig.readInData("Common.cfg");
-            System.out.println(commonConfig);
+            CommonConfigData commonConfig = CommonConfigData.readInData("Common.cfg");
 
-            Map<Integer, PeerConfigData> peerConfig = PeerConfigData.readInData("PeerInfo.cfg");
-            System.out.println(peerConfig);
+            Map<Integer, PeerConfigData> peerConfig = PeerConfigData.readInData("TestPeerInfo.cfg");
 
             FileLogger fileLogger = new FileLogger(peerProcessId);
-            fileLogger.logConnectionTo(1002);
-            fileLogger.logConnectionFrom(1010);
-            fileLogger.logPreferredNeighbors(List.of(1002, 1003, 1004));
-            fileLogger.logOptimisticallyUnchokedNeighbor(1005);
-            fileLogger.logUnchokedBy(1002);
-            fileLogger.logChokedBy(1003);
-            fileLogger.logReceivedHave(1004, 7);
-            fileLogger.logReceivedInterested(1005);
-            fileLogger.logReceivedNotInterested(1006);
-            fileLogger.logDownloadedPiece(7, 1004, 12);
-            fileLogger.logDownloadedCompleteFile();
 
             // Client: Initiates a connection, sends handshake, sends bitfield,
             // Server: Initiates a connection, sends handshake, sends bitfield,
 
+            PeerConfigData peerData = peerConfig.get(peerProcessId);
+            if (peerData == null) {
+                throw new RuntimeException("No peer exists in the config for this peer process id");
+            }
+
+            new Peer(peerProcessId, peerData.hasFile(), commonConfig, peerConfig, fileLogger).run();
         } catch (NumberFormatException e) {
             throw new RuntimeException("Peer process id must be an integer");
         } catch (IOException e) {

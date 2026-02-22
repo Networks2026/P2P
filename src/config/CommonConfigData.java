@@ -11,19 +11,19 @@ import java.util.List;
     FileSize 2167705
     PieceSize 16384
  */
-public record CommonConfig(int numberOfPreferredNeighbors, int unchokingInterval, int optimisticUnchokingInterval,
+public record CommonConfigData(int numberOfPreferredNeighbors, int unchokingInterval, int optimisticUnchokingInterval,
         String fileName, int fileSize, int pieceSize) {
 
     private static final int COMMON_CONFIG_LEN = 6;
 
-    public static CommonConfig readInData(String configFileName) throws IOException {
+    public static CommonConfigData readInData(String configFileName) throws IOException {
         List<String> lines = Files.readAllLines(Path.of(configFileName));
 
         if (lines.size() != COMMON_CONFIG_LEN) {
             throw new RuntimeException("Incorrect number of values in common config");
         }
 
-        return new CommonConfig(
+        return new CommonConfigData(
                 retrieveInt(lines, 0),
                 retrieveInt(lines, 1),
                 retrieveInt(lines, 2),

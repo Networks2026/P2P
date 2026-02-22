@@ -1,6 +1,8 @@
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 
@@ -22,18 +24,16 @@ public class Server {
      */
     public void run() throws IOException {
         ServerSocket listener = new ServerSocket(this.port);
-        int clientIndex = 1;
+        System.out.println("Started listening on: " + this.port);
 
         try {
             while (true) {
                 // Receive new connection when needed
-                new Handler(listener.accept(), clientIndex).start();
+                Handler handler = new Handler(listener.accept(), this.peerRef);
+                handler.start();
 
                 // Tell peer about connection
-                this.peerRef.recordNewServerConnection(clientIndex);
-
-                // Increment index
-                clientIndex++;
+                this.peerRef.recordNewServerConnection(handler.peerId);
             }
         } finally {
             listener.close();
@@ -50,11 +50,28 @@ public class Server {
         private Socket connection;
         private ObjectInputStream in;
         private ObjectOutputStream out;
-        private int clientIndex;
+        private Integer peerId;
+        private Peer peerRef;
 
-        public Handler(Socket connection, int clientIndex) {
+        public Handler(Socket connection, Peer peerRef) throws IOException {
             this.connection = connection;
-            this.clientIndex = clientIndex;
+            this.peerRef = peerRef;
+
+            InputStream inputStream = connection.getInputStream();
+            while (true) {
+                try {
+                    this.peerId = Message.decodeHandshake(inputStream);
+                    break;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    break;
+                }
+            }
+
+            this.peerRef.fileLogger.logConnectionFrom(this.peerId);
+
+            OutputStream outputStream = connection.getOutputStream();
+            outputStream.write(Message.encodeHandshake(this.peerRef.id));
         }
 
         /**
@@ -62,7 +79,16 @@ public class Server {
          * called by Thread.start()
          */
         public void run() {
-            // TODO: LOG CONNECTION FROM HANDSHAKE PEER ID
+            try {
+                InputStream input = this.connection.getInputStream();
+            } catch (Exception e) {
+                e.printStackTrace();
+                try {
+                    this.connection.close();
+                } catch (IOException e1) {
+                    e1.printStackTrace();
+                }
+            }
         }
 
         public void sendMessage(String message) {

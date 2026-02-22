@@ -1,5 +1,6 @@
 import java.io.IOException;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -38,14 +39,8 @@ public class Peer {
         this.fileLogger = fileLogger;
 
         this.totalPieces = Math.ceilDiv(this.commonConfig.fileSize(), this.commonConfig.pieceSize());
-        this.file = List.of(new Boolean[this.totalPieces]);
         this.pieceCount = this.hasFile ? this.totalPieces : 0;
-
-        if (this.hasFile) {
-            Collections.fill(this.file, Boolean.TRUE);
-        } else {
-            Collections.fill(this.file, Boolean.FALSE);
-        }
+        this.file = new ArrayList<>(Collections.nCopies(pieceCount, this.hasFile));
 
         this.client = new Client(this);
         this.server = new Server(this);
@@ -55,11 +50,11 @@ public class Peer {
      * Starts server and client
      */
     void run() throws IOException {
-        if (hasFile) {
+        if (this.hasFile) {
             this.server.run();
         } else {
+            this.client.start();
             this.server.run();
-            this.client.run();
         }
     }
 
@@ -70,6 +65,8 @@ public class Peer {
      * an id greater than ours.
      */
     public void recordNewServerConnection(Integer peerId) throws UnknownHostException, IOException {
-        this.client.connectTo(peerId);
+        if (!this.hasFile) {
+            this.client.connectTo(peerId);
+        }
     }
 }

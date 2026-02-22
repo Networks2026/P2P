@@ -1,3 +1,4 @@
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -57,19 +58,33 @@ public class Message {
     // For handshake messages specifically
     public static class Handshake {
 
+        public static final int LEN = 32;
         public static final int HEADER_LEN = 18;
         public static final int ZERO_LEN = 10;
         public static final int PEER_LEN = 4;
+        public static final String HEADER = "P2PFILESHARINGPROJ";
 
     }
 
     // Used to decode a handshake message and return a peerId
-    public static Integer decodeHandshake(InputStream inputStream) throws IOException {
+    public static Integer decodeHandshake(InputStream inputStream) throws IOException, EOFException {
         byte[] header = inputStream.readNBytes(Handshake.HEADER_LEN);
-        System.out.println(new String(header));
+        if (header.length == 0) {
+            throw new EOFException("No handshake message delivered");
+        }
+
         inputStream.readNBytes(Handshake.ZERO_LEN);
         byte[] peerId = inputStream.readNBytes(Handshake.PEER_LEN);
         return ByteBuffer.wrap(peerId).getInt();
+    }
+
+    // Used to encode a handshaake message with the peerId
+    public static byte[] encodeHandshake(Integer peerId) throws IOException {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(Handshake.LEN);
+        byteBuffer.put(Handshake.HEADER.getBytes());
+        byteBuffer.put(new byte[Handshake.ZERO_LEN]);
+        byteBuffer.putInt(peerId);
+        return byteBuffer.array();
     }
 
 }
