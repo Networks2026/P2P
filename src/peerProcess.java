@@ -2,10 +2,6 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Hello world!
- *
- */
 public class peerProcess {
 
     public static void main(String[] args) {
@@ -35,6 +31,9 @@ public class peerProcess {
             fileLogger.logReceivedNotInterested(1006);
             fileLogger.logDownloadedPiece(7, 1004, 12);
             fileLogger.logDownloadedCompleteFile();
+
+            // Client: Initiates a connection, sends handshake, sends bitfield,
+            // Server: Initiates a connection, sends handshake, sends bitfield,
 
         } catch (NumberFormatException e) {
             throw new RuntimeException("Peer process id must be an integer");

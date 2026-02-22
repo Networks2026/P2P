@@ -1,3 +1,6 @@
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -11,7 +14,7 @@ public class Message {
      * For message type checking. The fromCode method can be used to get the object
      * for a type from a message
      */
-    public enum Type {
+    public static enum Type {
 
         CHOKE(0),
         UNCHOKE(1),
@@ -58,6 +61,15 @@ public class Message {
         public static final int ZERO_LEN = 10;
         public static final int PEER_LEN = 4;
 
+    }
+
+    // Used to decode a handshake message and return a peerId
+    public static Integer decodeHandshake(InputStream inputStream) throws IOException {
+        byte[] header = inputStream.readNBytes(Handshake.HEADER_LEN);
+        System.out.println(new String(header));
+        inputStream.readNBytes(Handshake.ZERO_LEN);
+        byte[] peerId = inputStream.readNBytes(Handshake.PEER_LEN);
+        return ByteBuffer.wrap(peerId).getInt();
     }
 
 }

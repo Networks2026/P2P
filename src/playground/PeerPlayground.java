@@ -7,35 +7,38 @@ import java.util.Map;
 /**
  * Contains and bridges between the server and client.
  */
-public class Peer {
+public class PeerPlayground {
   public final Integer id;
   public Boolean hasFile;
   public List<Boolean> file;
-  
-  protected final CommonConfig commonConfig;
+
+  protected final CommonConfigData commonConfig;
   protected final Map<Integer, PeerConfigData> peerConfig;
-  
+
   private Client client;
   private Server server;
-  
+  public Object fileLogger;
+
   /**
    * Constructor
    * 
    * Setup peer information.
-   * @throws IOException 
+   * 
+   * @throws IOException
    */
-  public Peer(Integer id, Boolean hasFile, CommonConfig commonConfig, Map<Integer, PeerConfigData> peerConfig) throws IOException {
+  public Peer(Integer id, Boolean hasFile, CommonConfigData commonConfig, Map<Integer, PeerConfigData> peerConfig)
+      throws IOException {
     this.id = id;
     this.hasFile = hasFile;
     this.file = new ArrayList<>(); // TODO: Read file
-    
+
     this.commonConfig = commonConfig;
     this.peerConfig = peerConfig;
-    
+
     this.client = new Client(this);
     this.server = new Server(this);
   }
-  
+
   /**
    * Starts server and client
    */
@@ -47,7 +50,7 @@ public class Peer {
       this.client.run();
     }
   }
-  
+
   /**
    * Records a new connection from another peer's client to our server,
    * our client will then try to make a connection to their server.
