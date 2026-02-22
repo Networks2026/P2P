@@ -1,9 +1,9 @@
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.List;
@@ -12,22 +12,23 @@ import java.util.Map;
 public class Client extends Thread {
     private final Peer peerRef;
 
-    private Socket requestSocket;
-    private ObjectOutputStream out;
-    private ObjectInputStream in;
-    private String messageSent;
-    private String messageReceived;
-
     private Map<Integer, Socket> requestSockets = new HashMap<>();
-    private Map<String, List<Boolean>> neighbors = new HashMap<>();
+    private Map<Integer, List<Boolean>> neighbors = new HashMap<>();
 
     public Client(Peer peerRef) {
         this.peerRef = peerRef;
     };
 
-    public void connectTo(int peerId) throws UnknownHostException, IOException {
+    public void connectTo(int peerId, Boolean noLog) throws UnknownHostException, IOException {
+        if (requestSockets.containsKey(peerId)) {
+            return;
+        }
+
+        System.out.println("Attempting to connect to peer: " + peerId);
+
         PeerConfigData peerData = this.peerRef.peerConfig.get(peerId);
         Socket newSocket = new Socket(peerData.hostName(), peerData.port());
+        newSocket.setSoTimeout(200);
 
         OutputStream outputStream = newSocket.getOutputStream();
         outputStream.write(Message.encodeHandshake(this.peerRef.id));
@@ -48,19 +49,20 @@ public class Client extends Thread {
             }
         }
 
-        this.peerRef.fileLogger.logConnectionTo(peerId);
+        if (!noLog) {
+            this.peerRef.fileLogger.logConnectionTo(peerId);
+        }
         requestSockets.put(peerId, newSocket);
     }
 
     public void run() {
-        System.out.println("Attempting to connect to previous neighbors");
         for (Integer peerId : this.peerRef.peerConfig.keySet()) {
             if (this.peerRef.id.equals(peerId)) {
                 break;
             }
 
             try {
-                this.connectTo(peerId);
+                this.connectTo(peerId, false);
             } catch (Exception e) {
                 e.printStackTrace();
                 return;
@@ -71,6 +73,23 @@ public class Client extends Thread {
             for (Map.Entry<Integer, Socket> entry : requestSockets.entrySet()) {
                 try {
                     InputStream input = entry.getValue().getInputStream();
+                    Message message = Message.decodeMessage(input);
+
+                    switch (message.type()) {
+                        case Message.Type.BITFIELD:
+                            List<Boolean> bitfield = Message.decodeBitfield(message);
+                            neighbors.put(entry.getKey(), bitfield);
+                            System.out.println(bitfield);
+                            break;
+
+                        default:
+                            System.out.println(message.type());
+                            break;
+                    }
+                } catch (SocketTimeoutException timeout) {
+                    continue;
+                } catch (EOFException eof) {
+                    eof.printStackTrace();
                 } catch (Exception e) {
                     e.printStackTrace();
                     try {
@@ -94,6 +113,10 @@ public class Client extends Thread {
             }
         }
         requestSockets.clear();
+    }
+
+    public Map<Integer, Socket> getConnectedTo() {
+        return this.requestSockets;
     }
 
 }

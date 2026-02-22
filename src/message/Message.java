@@ -2,11 +2,13 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 // Length is in bytes
-public class Message {
+public record Message(Integer length, Type type, byte[] payload) {
 
     public static final int LENGTH_LEN = 4;
     public static final int TYPE_LEN = 1;
@@ -17,17 +19,17 @@ public class Message {
      */
     public static enum Type {
 
-        CHOKE(0),
-        UNCHOKE(1),
-        INTERESTED(2),
-        NOT_INTERESTED(3),
-        HAVE(4),
-        BITFIELD(5),
-        REQUEST(6),
-        PIECE(7);
+        CHOKE((byte) 0),
+        UNCHOKE((byte) 1),
+        INTERESTED((byte) 2),
+        NOT_INTERESTED((byte) 3),
+        HAVE((byte) 4),
+        BITFIELD((byte) 5),
+        REQUEST((byte) 6),
+        PIECE((byte) 7);
 
-        private final int code;
-        private static final Map<Integer, Type> LOOKUP = new HashMap<>();
+        private final byte code;
+        private static final Map<Byte, Type> LOOKUP = new HashMap<>();
 
         static {
             for (Type t : values()) {
@@ -35,7 +37,7 @@ public class Message {
             }
         }
 
-        public static Type fromCode(int code) throws IllegalArgumentException {
+        public static Type fromCode(byte code) throws IllegalArgumentException {
             Type t = LOOKUP.get(code);
 
             if (t == null) {
@@ -45,7 +47,7 @@ public class Message {
             return t;
         }
 
-        Type(int code) {
+        Type(byte code) {
             this.code = code;
         }
 
@@ -68,11 +70,7 @@ public class Message {
 
     // Used to decode a handshake message and return a peerId
     public static Integer decodeHandshake(InputStream inputStream) throws IOException, EOFException {
-        byte[] header = inputStream.readNBytes(Handshake.HEADER_LEN);
-        if (header.length == 0) {
-            throw new EOFException("No handshake message delivered");
-        }
-
+        inputStream.readNBytes(Handshake.HEADER_LEN);
         inputStream.readNBytes(Handshake.ZERO_LEN);
         byte[] peerId = inputStream.readNBytes(Handshake.PEER_LEN);
         return ByteBuffer.wrap(peerId).getInt();
@@ -84,6 +82,37 @@ public class Message {
         byteBuffer.put(Handshake.HEADER.getBytes());
         byteBuffer.put(new byte[Handshake.ZERO_LEN]);
         byteBuffer.putInt(peerId);
+        return byteBuffer.array();
+    }
+
+    public static List<Boolean> decodeBitfield(Message message) {
+        List<Boolean> bitfield = new ArrayList<>();
+
+        for (byte b : message.payload()) {
+            bitfield.add(b != 0);
+        }
+
+        return bitfield;
+    }
+
+    public static Message decodeMessage(InputStream inputStream) throws IllegalArgumentException, IOException {
+        Integer length = ByteBuffer.wrap(inputStream.readNBytes(LENGTH_LEN)).getInt();
+        Type type = Type.fromCode(ByteBuffer.wrap(inputStream.readNBytes(TYPE_LEN)).get());
+        byte[] payload = inputStream.readNBytes(length);
+        System.out.println(length + " " + type);
+        return new Message(length, type, payload);
+    }
+
+    public static byte[] encodeBitfield(List<Boolean> bitfield) {
+        Integer payloadSize = bitfield.size();
+        ByteBuffer byteBuffer = ByteBuffer.allocate(LENGTH_LEN + TYPE_LEN + payloadSize);
+        byteBuffer.putInt(payloadSize);
+        byteBuffer.put(Type.BITFIELD.code);
+
+        for (Boolean b : bitfield) {
+            byteBuffer.put((byte) (b ? 1 : 0));
+        }
+
         return byteBuffer.array();
     }
 

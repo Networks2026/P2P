@@ -35,8 +35,6 @@ public class ServerPlayground {
         // Increment index
         clientIndex++;
       }
-    } finally {
-      listener.close();
     }
   }
 

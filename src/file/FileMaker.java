@@ -9,16 +9,14 @@ public class FileMaker {
     public final Integer pieceSize;
     public final Integer fileSize;
     public final Integer pieceAmt;
-    private final Boolean hasPad;
-
 
     public FileMaker(String path, Integer pieceSize, Integer fileSize) throws FileNotFoundException {
 
         try {
-            //Makes file if it doesnt exist - which it usually doesn't for a new client
-            this.fileCon = new RandomAccessFile (path, "rw");
-        }catch (FileNotFoundException e){
-            //Log the error the user made
+            // Makes file if it doesnt exist - which it usually doesn't for a new client
+            this.fileCon = new RandomAccessFile(path, "rw");
+        } catch (FileNotFoundException e) {
+            // Log the error the user made
             System.err.println("Error opening file");
             throw e;
         }
@@ -26,11 +24,11 @@ public class FileMaker {
         this.pieceSize = pieceSize;
         this.fileSize = fileSize;
         this.pieceAmt = fileSize / pieceSize;
-        this.hasPad = fileSize % pieceSize != 0;
     }
 
     /**
      * Piece num starts at 0 instead of 1
+     * 
      * @param pieceNum
      * @param pieceArray
      * @throws IOException
@@ -50,7 +48,6 @@ public class FileMaker {
             System.out.println(pieceNum);
         }
 
-
         long offset = (long) this.pieceSize * pieceNum;
         int pieceWriteSize = lastPiece ? (this.fileSize % this.pieceSize) : this.pieceSize;
         fileCon.seek(offset);
@@ -58,9 +55,8 @@ public class FileMaker {
         fileCon.write(pieceArray, 0, pieceWriteSize);
     }
 
-
     public void closeConnection() throws IOException {
-      fileCon.close();
+        fileCon.close();
     }
 
 }

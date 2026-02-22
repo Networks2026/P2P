@@ -11,7 +11,7 @@ import java.util.Map;
 public class Peer {
     public final Integer id;
     public Boolean hasFile;
-    public List<Boolean> file;
+    public List<Boolean> bitfield;
     public Integer totalPieces;
     public Integer pieceCount;
 
@@ -19,7 +19,7 @@ public class Peer {
     protected final Map<Integer, PeerConfigData> peerConfig;
     protected final FileLogger fileLogger;
 
-    private Client client;
+    protected Client client;
     private Server server;
 
     /**
@@ -40,7 +40,7 @@ public class Peer {
 
         this.totalPieces = Math.ceilDiv(this.commonConfig.fileSize(), this.commonConfig.pieceSize());
         this.pieceCount = this.hasFile ? this.totalPieces : 0;
-        this.file = new ArrayList<>(Collections.nCopies(pieceCount, this.hasFile));
+        this.bitfield = new ArrayList<>(Collections.nCopies(this.totalPieces, this.hasFile));
 
         this.client = new Client(this);
         this.server = new Server(this);
@@ -51,10 +51,10 @@ public class Peer {
      */
     void run() throws IOException {
         if (this.hasFile) {
-            this.server.run();
+            this.server.start();
         } else {
             this.client.start();
-            this.server.run();
+            this.server.start();
         }
     }
 
@@ -63,10 +63,12 @@ public class Peer {
      * our client will then try to make a connection to their server.
      * This allows our client to make connections to all other peers with
      * an id greater than ours.
+     * 
+     * No need to log when it is matching a new client connection
      */
-    public void recordNewServerConnection(Integer peerId) throws UnknownHostException, IOException {
+    public void recordNewServerConnection(Integer peerId, Boolean noLog) throws UnknownHostException, IOException {
         if (!this.hasFile) {
-            this.client.connectTo(peerId);
+            this.client.connectTo(peerId, noLog);
         }
     }
 }
