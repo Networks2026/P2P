@@ -2,8 +2,11 @@ import java.io.IOException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Contains and bridges between the server and client.
@@ -14,6 +17,8 @@ public class Peer {
     public List<Boolean> bitfield;
     public Integer totalPieces;
     public Integer pieceCount;
+    public Map<Integer, List<Boolean>> neighborBitfields = new HashMap<>();
+    public Set<Integer> neighborsInterested = new HashSet<>();
 
     protected final CommonConfigData commonConfig;
     protected final Map<Integer, PeerConfigData> peerConfig;
@@ -69,6 +74,12 @@ public class Peer {
     public void recordNewServerConnection(Integer peerId, Boolean noLog) throws UnknownHostException, IOException {
         if (!this.hasFile) {
             this.client.connectTo(peerId, noLog);
+        }
+    }
+
+    public void recordHave() throws IOException {
+        if (!this.hasFile) {
+            this.client.sendInterest();
         }
     }
 }

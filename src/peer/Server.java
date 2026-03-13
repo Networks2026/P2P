@@ -6,6 +6,7 @@ import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.util.List;
 
 /**
  * Responsible for accepting connection requests from clients,
@@ -89,6 +90,44 @@ public class Server extends Thread {
             while (true) {
                 try {
                     InputStream input = this.connection.getInputStream();
+
+                    Message message = Message.decodeMessage(input);
+
+                    Boolean interest;
+                    switch (message.type()) {
+                        case Message.Type.INTERESTED:
+                            interest = Message.decodeInterest(message);
+                            assert interest;
+
+                            this.peerRef.neighborsInterested.add(this.peerId);
+
+                            System.out.println(peerId + ": " + interest);
+                            break;
+
+                        case Message.Type.NOT_INTERESTED:
+                            interest = Message.decodeInterest(message);
+                            assert !interest;
+
+                            this.peerRef.neighborsInterested.remove(this.peerId);
+
+                            System.out.println(peerId + ": " + interest);
+                            break;
+
+                        case Message.Type.REQUEST:
+                            break;
+
+                        case Message.Type.HAVE:
+                            Integer pieceIndex = Message.decodeIndexField(message);
+                            List<Boolean> otherBitfield = this.peerRef.neighborBitfields.get(pieceIndex);
+                            otherBitfield.set(pieceIndex, true);
+                            this.peerRef.recordHave();
+                            break;
+
+                        default:
+                            System.out.println(message.type());
+                            break;
+                    }
+
                 } catch (SocketTimeoutException timeout) {
                     continue;
                 } catch (Exception e) {

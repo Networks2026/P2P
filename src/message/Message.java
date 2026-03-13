@@ -95,6 +95,23 @@ public record Message(Integer length, Type type, byte[] payload) {
         return bitfield;
     }
 
+    public static Integer decodeIndexField(Message message) {
+        return ByteBuffer.wrap(message.payload()).getInt();
+    }
+
+    public static Boolean decodeInterest(Message message) {
+        return message.type.equals(Type.INTERESTED);
+    }
+
+    public static byte[] encodeInterest(Boolean interested) {
+        Integer payloadSize = 0;
+        ByteBuffer byteBuffer = ByteBuffer.allocate(LENGTH_LEN + TYPE_LEN + payloadSize);
+        byteBuffer.putInt(payloadSize);
+        byteBuffer.put(interested ? Type.INTERESTED.code : Type.NOT_INTERESTED.code);
+
+        return byteBuffer.array();
+    }
+
     public static Message decodeMessage(InputStream inputStream) throws IllegalArgumentException, IOException {
         Integer length = ByteBuffer.wrap(inputStream.readNBytes(LENGTH_LEN)).getInt();
         Type type = Type.fromCode(ByteBuffer.wrap(inputStream.readNBytes(TYPE_LEN)).get());

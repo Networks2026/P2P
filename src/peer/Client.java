@@ -13,7 +13,6 @@ public class Client extends Thread {
     private final Peer peerRef;
 
     private Map<Integer, Socket> requestSockets = new HashMap<>();
-    private Map<Integer, List<Boolean>> neighborBitfields = new HashMap<>();
 
     public Client(Peer peerRef) {
         this.peerRef = peerRef;
@@ -78,8 +77,18 @@ public class Client extends Thread {
                     switch (message.type()) {
                         case Message.Type.BITFIELD:
                             List<Boolean> bitfield = Message.decodeBitfield(message);
-                            neighborBitfields.put(entry.getKey(), bitfield);
+                            this.peerRef.neighborBitfields.put(entry.getKey(), bitfield);
                             System.out.println(bitfield);
+                            this.sendInterest();
+                            break;
+
+                        case Message.Type.PIECE:
+                            break;
+
+                        case Message.Type.CHOKE:
+                            break;
+
+                        case Message.Type.UNCHOKE:
                             break;
 
                         default:
@@ -117,6 +126,28 @@ public class Client extends Thread {
 
     public Map<Integer, Socket> getConnectedTo() {
         return this.requestSockets;
+    }
+
+    public void sendInterest() throws IOException {
+        for (Map.Entry<Integer, Socket> entry : requestSockets.entrySet()) {
+            Socket connection = entry.getValue();
+            Integer otherPeerId = entry.getKey();
+
+            List<Boolean> otherBitfield = this.peerRef.neighborBitfields.get(otherPeerId);
+            if (otherBitfield == null) {
+                continue;
+            }
+
+            Boolean interested = false;
+            for (int i = 0; i < this.peerRef.totalPieces; ++i) {
+                if (this.peerRef.bitfield.get(i).equals(false) && otherBitfield.get(i).equals(true)) {
+                    interested = true;
+                    break;
+                }
+            }
+
+            connection.getOutputStream().write(Message.encodeInterest(interested));
+        }
     }
 
 }
