@@ -13,7 +13,7 @@ public class Client extends Thread {
     private final Peer peerRef;
 
     private Map<Integer, Socket> requestSockets = new HashMap<>();
-    private Map<Integer, List<Boolean>> neighbors = new HashMap<>();
+    private Map<Integer, List<Boolean>> neighborBitfields = new HashMap<>();
 
     public Client(Peer peerRef) {
         this.peerRef = peerRef;
@@ -78,7 +78,7 @@ public class Client extends Thread {
                     switch (message.type()) {
                         case Message.Type.BITFIELD:
                             List<Boolean> bitfield = Message.decodeBitfield(message);
-                            neighbors.put(entry.getKey(), bitfield);
+                            neighborBitfields.put(entry.getKey(), bitfield);
                             System.out.println(bitfield);
                             break;
 
