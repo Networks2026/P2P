@@ -30,7 +30,7 @@ public class FileLogger {
         StringBuilder sb = getPeerString().append("has the preferred neighbors ");
         for (int i = 0; i < preferredNeighborIds.size(); i++) {
             if (i > 0) {
-                sb.append(", ");
+                sb.append(",");
             }
             sb.append(preferredNeighborIds.get(i));
         }

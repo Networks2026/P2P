@@ -5,6 +5,7 @@ import java.io.RandomAccessFile;
 public class FileReader {
 
     private final RandomAccessFile fileCon;
+
     public final Integer pieceSize;
     public final Integer fileSize;
     public final Integer pieceAmt;

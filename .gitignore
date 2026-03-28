@@ -4,6 +4,9 @@
 # Log file
 *.log
 
+# Peer files
+peer_*/
+
 # BlueJ files
 *.ctxt
 

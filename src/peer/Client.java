@@ -5,14 +5,16 @@ import java.io.OutputStream;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Client extends Thread {
     private final Peer peerRef;
 
-    private Map<Integer, Socket> requestSockets = new HashMap<>();
+    private Map<Integer, Socket> requestSockets = new ConcurrentHashMap<>();
+    private Set<Integer> unchoked = ConcurrentHashMap.newKeySet();
 
     public Client(Peer peerRef) {
         this.peerRef = peerRef;
@@ -83,12 +85,16 @@ public class Client extends Thread {
                             break;
 
                         case Message.Type.PIECE:
+                            // TODO: Send request message if still unchoked
                             break;
 
                         case Message.Type.CHOKE:
+                            unchoked.remove(entry.getKey());
                             break;
 
                         case Message.Type.UNCHOKE:
+                            unchoked.add(entry.getKey());
+                            // TODO: Send request message
                             break;
 
                         default:

@@ -1,12 +1,24 @@
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Random;
+import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Responsible for accepting connection requests from clients,
@@ -15,6 +27,10 @@ import java.util.List;
 public class Server extends Thread {
     private final int port;
     private final Peer peerRef;
+    private final Timer timer = new Timer();
+    private Set<Integer> unchokedNeighbors = new HashSet<>();
+    private Optional<Integer> optimisticUnchokedNeighbor = Optional.empty();
+    private Map<Integer, Handler> handlers = new ConcurrentHashMap<>();
 
     public Server(Peer peerRef) {
         this.peerRef = peerRef;
@@ -28,6 +44,52 @@ public class Server extends Thread {
         try {
             try (ServerSocket listener = new ServerSocket(this.port)) {
                 System.out.println("Started listening on: " + this.port);
+
+                // Set up rates map
+                refreshNeighborsRates();
+
+                // Set up unchoking intervals
+                timer.schedule(new TimerTask() {
+                    public void run() {
+                        Set<Integer> prev = new HashSet<>(unchokedNeighbors);
+                        unchokedNeighbors = findNeighborsTopRates();
+                        sendChokeMessages();
+                        if (!prev.equals(unchokedNeighbors)) {
+                            peerRef.fileLogger.logPreferredNeighbors(new ArrayList<>(unchokedNeighbors));
+                        }
+                        System.out.println("Unchoked Neighbors: " + unchokedNeighbors);
+                    }
+                }, 0, this.peerRef.commonConfig.unchokingInterval() * 1000);
+
+                timer.schedule(new TimerTask() {
+                    public void run() {
+                        Optional<Integer> prev = optimisticUnchokedNeighbor;
+                        optimisticUnchokedNeighbor = findOptimisticUnchokedNeighbor();
+
+                        if (prev.isEmpty()) {
+                            if (optimisticUnchokedNeighbor.isPresent()) {
+                                handlers.get(optimisticUnchokedNeighbor.get()).sendChoke(false);
+                                peerRef.fileLogger.logOptimisticallyUnchokedNeighbor(optimisticUnchokedNeighbor.get());
+                            }
+                        } else {
+                            if (optimisticUnchokedNeighbor.isEmpty()) {
+                                handlers.get(prev.get()).sendChoke(true);
+                            } else {
+                                Integer prevPeerId = prev.get();
+                                Integer newPeerId = optimisticUnchokedNeighbor.get();
+                                if (!prevPeerId.equals(newPeerId)) {
+                                    if (!unchokedNeighbors.contains(prevPeerId)) {
+                                        handlers.get(prevPeerId).sendChoke(true);
+                                    }
+                                    handlers.get(newPeerId).sendChoke(false);
+                                    peerRef.fileLogger.logOptimisticallyUnchokedNeighbor(newPeerId);
+                                }
+                            }
+                        }
+
+                        System.out.println("Optimistic Unchoked Neighbor: " + optimisticUnchokedNeighbor);
+                    }
+                }, 0, this.peerRef.commonConfig.optimisticUnchokingInterval() * 1000);
 
                 while (true) {
                     // Receive new connection when needed
@@ -47,12 +109,8 @@ public class Server extends Thread {
      * Spawns from the listening loop and
      * are responsible for dealing with a single client's requests.
      */
-    private static class Handler extends Thread {
-        private String messageReceived;
-        private String messageSent;
+    private class Handler extends Thread {
         private Socket connection;
-        private ObjectInputStream in;
-        private ObjectOutputStream out;
         private Integer peerId;
         private Peer peerRef;
 
@@ -76,6 +134,7 @@ public class Server extends Thread {
             if (!this.peerRef.client.getConnectedTo().containsKey(this.peerId)) {
                 this.peerRef.fileLogger.logConnectionFrom(this.peerId);
             }
+            handlers.put(peerId, this);
 
             OutputStream outputStream = connection.getOutputStream();
             outputStream.write(Message.encodeHandshake(this.peerRef.id));
@@ -101,7 +160,7 @@ public class Server extends Thread {
 
                             this.peerRef.neighborsInterested.add(this.peerId);
 
-                            System.out.println(peerId + ": " + interest);
+                            this.peerRef.fileLogger.logReceivedInterested(this.peerId);
                             break;
 
                         case Message.Type.NOT_INTERESTED:
@@ -110,17 +169,21 @@ public class Server extends Thread {
 
                             this.peerRef.neighborsInterested.remove(this.peerId);
 
-                            System.out.println(peerId + ": " + interest);
+                            this.peerRef.fileLogger.logReceivedNotInterested(this.peerId);
                             break;
 
                         case Message.Type.REQUEST:
+                            // TODO: Send piece message if peer is unchoked
                             break;
 
                         case Message.Type.HAVE:
                             Integer pieceIndex = Message.decodeIndexField(message);
                             List<Boolean> otherBitfield = this.peerRef.neighborBitfields.get(pieceIndex);
+
                             otherBitfield.set(pieceIndex, true);
+
                             this.peerRef.recordHave();
+                            this.peerRef.fileLogger.logReceivedHave(this.peerId, pieceIndex);
                             break;
 
                         default:
@@ -142,7 +205,108 @@ public class Server extends Thread {
             }
         }
 
-        public void sendMessage(String message) {
+        public void sendChoke(Boolean choked) {
+            try {
+                connection.getOutputStream().write(Message.encodeChoke(choked));
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(peerId);
+        }
+
+    }
+
+    /**
+     * Refreshes rates for each choking interval
+     */
+    private void refreshNeighborsRates() {
+        this.peerRef.ratesFromNeighbors.clear();
+        for (Integer peerId : this.handlers.keySet()) {
+            this.peerRef.ratesFromNeighbors.put(peerId, BigInteger.ZERO);
         }
     }
+
+    /**
+     * Finds the neighbors with the highest send rates to this peer
+     * 
+     * @return
+     */
+    private Set<Integer> findNeighborsTopRates() {
+        // Only considers neighbors that are interested in pieces this peer has
+        List<Entry<Integer, BigInteger>> entries = new ArrayList<>(this.peerRef.ratesFromNeighbors.entrySet()).stream()
+                .filter(entry -> this.peerRef.neighborsInterested.contains(entry.getKey()))
+                .collect(Collectors.toList());
+
+        // Clear out previous values
+        refreshNeighborsRates();
+
+        // Randomization if two neighbors have the same rate
+        Collections.shuffle(entries);
+        Collections.sort(entries, Entry.comparingByValue());
+
+        // Finds N top preferred neighbors
+        Set<Integer> topNeighbors = entries.isEmpty() ? Set.of()
+                : new HashSet<>(entries
+                        .subList(entries.size() - this.peerRef.commonConfig.numberOfPreferredNeighbors(),
+                                entries.size())
+                        .stream()
+                        .map(entry -> entry.getKey())
+                        .toList());
+
+        // Moves optimistic unchoked to normal unchoked
+        if (optimisticUnchokedNeighbor.isPresent()) {
+            if (topNeighbors.contains(optimisticUnchokedNeighbor.get())) {
+                optimisticUnchokedNeighbor = Optional.empty();
+            }
+        }
+
+        return topNeighbors;
+    }
+
+    /**
+     * Finds a neighbor each optimistic unchoking interval that is currently choked
+     * 
+     * @return
+     */
+    private Optional<Integer> findOptimisticUnchokedNeighbor() {
+        Set<Integer> unchoked = new HashSet<>();
+        for (Integer peerId : unchokedNeighbors) {
+            unchoked.add(peerId);
+        }
+        if (optimisticUnchokedNeighbor.isPresent()) {
+            unchoked.add(optimisticUnchokedNeighbor.get());
+        }
+
+        Set<Integer> interestedNeighbors = new HashSet<>(this.peerRef.neighborsInterested);
+        if (interestedNeighbors.isEmpty()) {
+            return Optional.empty();
+        }
+
+        if (!interestedNeighbors.removeAll(unchoked)) {
+            return Optional.empty();
+        }
+
+        List<Integer> choked = new ArrayList<>(interestedNeighbors);
+        return choked.isEmpty() ? Optional.empty() : Optional.of(choked.get(new Random().nextInt(choked.size())));
+    }
+
+    /**
+     * Sends choking messages to normally unchoked or choked peers. Optimistic
+     * neighbors are dealt with separately in their interval.
+     */
+    private void sendChokeMessages() {
+
+        for (Entry<Integer, Handler> entry : this.handlers.entrySet()) {
+            if (optimisticUnchokedNeighbor.isPresent() && entry.getKey().equals(optimisticUnchokedNeighbor.get())) {
+                continue;
+            }
+            Boolean choked = this.unchokedNeighbors.contains(entry.getKey());
+            entry.getValue().sendChoke(choked);
+        }
+    }
+
 }

@@ -68,7 +68,7 @@ public record Message(Integer length, Type type, byte[] payload) {
 
     }
 
-    // Used to decode a handshake message and return a peerId
+    /** Used to decode a handshake message and return a peerId */
     public static Integer decodeHandshake(InputStream inputStream) throws IOException, EOFException {
         inputStream.readNBytes(Handshake.HEADER_LEN);
         inputStream.readNBytes(Handshake.ZERO_LEN);
@@ -76,7 +76,7 @@ public record Message(Integer length, Type type, byte[] payload) {
         return ByteBuffer.wrap(peerId).getInt();
     }
 
-    // Used to encode a handshaake message with the peerId
+    /** Used to encode a handshaake message with the peerId */
     public static byte[] encodeHandshake(Integer peerId) throws IOException {
         ByteBuffer byteBuffer = ByteBuffer.allocate(Handshake.LEN);
         byteBuffer.put(Handshake.HEADER.getBytes());
@@ -95,6 +95,7 @@ public record Message(Integer length, Type type, byte[] payload) {
         return bitfield;
     }
 
+    /** Decodes a message that contains a piece index field and return that index */
     public static Integer decodeIndexField(Message message) {
         return ByteBuffer.wrap(message.payload()).getInt();
     }
@@ -108,6 +109,15 @@ public record Message(Integer length, Type type, byte[] payload) {
         ByteBuffer byteBuffer = ByteBuffer.allocate(LENGTH_LEN + TYPE_LEN + payloadSize);
         byteBuffer.putInt(payloadSize);
         byteBuffer.put(interested ? Type.INTERESTED.code : Type.NOT_INTERESTED.code);
+
+        return byteBuffer.array();
+    }
+
+    public static byte[] encodeChoke(Boolean choked) {
+        Integer payloadSize = 0;
+        ByteBuffer byteBuffer = ByteBuffer.allocate(LENGTH_LEN + TYPE_LEN + payloadSize);
+        byteBuffer.putInt(payloadSize);
+        byteBuffer.put(choked ? Type.CHOKE.code : Type.UNCHOKE.code);
 
         return byteBuffer.array();
     }

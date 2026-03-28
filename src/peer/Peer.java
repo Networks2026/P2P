@@ -1,12 +1,11 @@
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Contains and bridges between the server and client.
@@ -17,8 +16,15 @@ public class Peer {
     public List<Boolean> bitfield;
     public Integer totalPieces;
     public Integer pieceCount;
-    public Map<Integer, List<Boolean>> neighborBitfields = new HashMap<>();
-    public Set<Integer> neighborsInterested = new HashSet<>();
+    public ConcurrentHashMap<Integer, List<Boolean>> neighborBitfields = new ConcurrentHashMap<>();
+    public Set<Integer> neighborsInterested = ConcurrentHashMap.newKeySet();
+
+    /**
+     * For tracking who is sending the most data to this peer. For determining who
+     * should be unchoked or choked during the next interval. Unchoking is also
+     * based on expressed interest though.
+     */
+    public ConcurrentHashMap<Integer, BigInteger> ratesFromNeighbors = new ConcurrentHashMap<>();
 
     protected final CommonConfigData commonConfig;
     protected final Map<Integer, PeerConfigData> peerConfig;
@@ -45,7 +51,7 @@ public class Peer {
 
         this.totalPieces = Math.ceilDiv(this.commonConfig.fileSize(), this.commonConfig.pieceSize());
         this.pieceCount = this.hasFile ? this.totalPieces : 0;
-        this.bitfield = new ArrayList<>(Collections.nCopies(this.totalPieces, this.hasFile));
+        this.bitfield = Collections.synchronizedList(Collections.nCopies(this.totalPieces, this.hasFile));
 
         this.client = new Client(this);
         this.server = new Server(this);
@@ -77,6 +83,14 @@ public class Peer {
         }
     }
 
+    /**
+     * Determines if client is interested based on new information that another peer
+     * has a new piece.
+     * As long as this peer does not have the file, the client will express interest
+     * if it needs the new piece.
+     * 
+     * @throws IOException
+     */
     public void recordHave() throws IOException {
         if (!this.hasFile) {
             this.client.sendInterest();
