@@ -14,7 +14,7 @@ public class Client extends Thread {
     private final Peer peerRef;
 
     private Map<Integer, Socket> requestSockets = new ConcurrentHashMap<>();
-    private Set<Integer> unchoked = ConcurrentHashMap.newKeySet();
+    private Set<Integer> unchokedBy = ConcurrentHashMap.newKeySet();
 
     public Client(Peer peerRef) {
         this.peerRef = peerRef;
@@ -75,11 +75,12 @@ public class Client extends Thread {
                 try {
                     InputStream input = entry.getValue().getInputStream();
                     Message message = Message.decodeMessage(input);
+                    Integer otherPeerId = entry.getKey();
 
                     switch (message.type()) {
                         case Message.Type.BITFIELD:
                             List<Boolean> bitfield = Message.decodeBitfield(message);
-                            this.peerRef.neighborBitfields.put(entry.getKey(), bitfield);
+                            this.peerRef.neighborBitfields.put(otherPeerId, bitfield);
                             System.out.println(bitfield);
                             this.sendInterest();
                             break;
@@ -89,11 +90,13 @@ public class Client extends Thread {
                             break;
 
                         case Message.Type.CHOKE:
-                            unchoked.remove(entry.getKey());
+                            unchokedBy.remove(otherPeerId);
+                            this.peerRef.fileLogger.logChokedBy(otherPeerId);
                             break;
 
                         case Message.Type.UNCHOKE:
-                            unchoked.add(entry.getKey());
+                            unchokedBy.add(otherPeerId);
+                            this.peerRef.fileLogger.logUnchokedBy(otherPeerId);
                             // TODO: Send request message
                             break;
 
