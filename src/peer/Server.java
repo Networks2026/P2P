@@ -304,7 +304,7 @@ public class Server extends Thread {
             if (optimisticUnchokedNeighbor.isPresent() && entry.getKey().equals(optimisticUnchokedNeighbor.get())) {
                 continue;
             }
-            Boolean choked = this.unchokedNeighbors.contains(entry.getKey());
+            Boolean choked = !this.unchokedNeighbors.contains(entry.getKey());
             entry.getValue().sendChoke(choked);
         }
     }
