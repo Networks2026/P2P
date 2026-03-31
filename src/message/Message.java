@@ -1,6 +1,7 @@
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -68,6 +69,32 @@ public record Message(Integer length, Type type, byte[] payload) {
 
     }
 
+    public static record PieceData(Integer index, byte[] fileData) {
+
+        public static final int INDEX_LEN = 4;
+
+    }
+
+    public static PieceData decodePiece(Message message) {
+        ByteBuffer byteBuffer = ByteBuffer.wrap(message.payload());
+        int index = byteBuffer.getInt();
+        int remainingLength = byteBuffer.remaining();
+        byte[] remainingBytes = new byte[remainingLength];
+        byteBuffer.get(remainingBytes);
+
+        return new PieceData(index, remainingBytes);
+    }
+
+    public static byte[] encodePiece(PieceData pieceData, int pieceSize) {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(LENGTH_LEN + TYPE_LEN + PieceData.INDEX_LEN + pieceSize);
+        byteBuffer.putInt(PieceData.INDEX_LEN + pieceSize);
+        byteBuffer.put(Type.PIECE.code);
+        byteBuffer.putInt(pieceData.index());
+        byteBuffer.put(pieceData.fileData());
+
+        return byteBuffer.array();
+    }
+
     /** Used to decode a handshake message and return a peerId */
     public static Integer decodeHandshake(InputStream inputStream) throws IOException, EOFException {
         inputStream.readNBytes(Handshake.HEADER_LEN);
@@ -82,6 +109,7 @@ public record Message(Integer length, Type type, byte[] payload) {
         byteBuffer.put(Handshake.HEADER.getBytes());
         byteBuffer.put(new byte[Handshake.ZERO_LEN]);
         byteBuffer.putInt(peerId);
+
         return byteBuffer.array();
     }
 
@@ -122,7 +150,8 @@ public record Message(Integer length, Type type, byte[] payload) {
         return byteBuffer.array();
     }
 
-    public static Message decodeMessage(InputStream inputStream) throws IllegalArgumentException, IOException {
+    public static Message decodeMessage(InputStream inputStream)
+            throws IllegalArgumentException, IOException, BufferUnderflowException {
         Integer length = ByteBuffer.wrap(inputStream.readNBytes(LENGTH_LEN)).getInt();
         Type type = Type.fromCode(ByteBuffer.wrap(inputStream.readNBytes(TYPE_LEN)).get());
         byte[] payload = inputStream.readNBytes(length);
@@ -139,6 +168,26 @@ public record Message(Integer length, Type type, byte[] payload) {
         for (Boolean b : bitfield) {
             byteBuffer.put((byte) (b ? 1 : 0));
         }
+
+        return byteBuffer.array();
+    }
+
+    public static byte[] encodeRequest(Integer pieceIndex) {
+        Integer payloadSize = 4;
+        ByteBuffer byteBuffer = ByteBuffer.allocate(LENGTH_LEN + TYPE_LEN + payloadSize);
+        byteBuffer.putInt(payloadSize);
+        byteBuffer.put(Type.REQUEST.code);
+        byteBuffer.putInt(pieceIndex);
+
+        return byteBuffer.array();
+    }
+
+    public static byte[] encodeHave(Integer pieceIndex) {
+        Integer payloadSize = 4;
+        ByteBuffer byteBuffer = ByteBuffer.allocate(LENGTH_LEN + TYPE_LEN + payloadSize);
+        byteBuffer.putInt(payloadSize);
+        byteBuffer.put(Type.HAVE.code);
+        byteBuffer.putInt(pieceIndex);
 
         return byteBuffer.array();
     }

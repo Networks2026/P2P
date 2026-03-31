@@ -1,6 +1,8 @@
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.file.Files;
 
 public class FileMaker {
 
@@ -45,7 +47,7 @@ public class FileMaker {
 
         boolean lastPiece = pieceNum == this.pieceAmt;
         if (lastPiece) {
-            System.out.println(pieceNum);
+            // System.out.println(pieceNum);
         }
 
         long offset = (long) this.pieceSize * pieceNum;
@@ -59,4 +61,18 @@ public class FileMaker {
         fileCon.close();
     }
 
+    public static String createDirAndFile(Integer peerId, String fileName, Boolean hasFile) throws IOException {
+        File dir = new File("peer_" + peerId);
+        if (!dir.exists()) {
+            dir.mkdir();
+        }
+
+        File file = new File(dir, fileName);
+        if (!hasFile) {
+            Files.deleteIfExists(file.toPath());
+            file.createNewFile();
+        }
+
+        return file.getPath();
+    }
 }

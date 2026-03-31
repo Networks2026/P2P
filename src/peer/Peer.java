@@ -1,6 +1,7 @@
 import java.io.IOException;
 import java.math.BigInteger;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,8 @@ public class Peer {
     protected final CommonConfigData commonConfig;
     protected final Map<Integer, PeerConfigData> peerConfig;
     protected final FileLogger fileLogger;
+    protected final FileMaker fileMaker;
+    protected final FileReader fileReader;
 
     protected Client client;
     private Server server;
@@ -51,7 +54,12 @@ public class Peer {
 
         this.totalPieces = Math.ceilDiv(this.commonConfig.fileSize(), this.commonConfig.pieceSize());
         this.pieceCount = this.hasFile ? this.totalPieces : 0;
-        this.bitfield = Collections.synchronizedList(Collections.nCopies(this.totalPieces, this.hasFile));
+        this.bitfield = Collections
+                .synchronizedList(new ArrayList<>(Collections.nCopies(this.totalPieces, this.hasFile)));
+
+        String filePath = FileMaker.createDirAndFile(this.id, this.commonConfig.fileName(), this.hasFile);
+        this.fileMaker = new FileMaker(filePath, this.commonConfig.pieceSize(), this.commonConfig.fileSize());
+        this.fileReader = new FileReader(filePath, this.commonConfig.pieceSize(), this.commonConfig.fileSize());
 
         this.client = new Client(this);
         this.server = new Server(this);
@@ -61,12 +69,8 @@ public class Peer {
      * Starts server and client
      */
     void run() throws IOException {
-        if (this.hasFile) {
-            this.server.start();
-        } else {
-            this.client.start();
-            this.server.start();
-        }
+        this.client.start();
+        this.server.start();
     }
 
     /**

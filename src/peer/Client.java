@@ -5,8 +5,10 @@ import java.io.OutputStream;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -14,6 +16,8 @@ public class Client extends Thread {
     private final Peer peerRef;
 
     private Map<Integer, Socket> requestSockets = new ConcurrentHashMap<>();
+
+    // This may not be needed, not sure yet
     private Set<Integer> unchokedBy = ConcurrentHashMap.newKeySet();
 
     public Client(Peer peerRef) {
@@ -81,12 +85,34 @@ public class Client extends Thread {
                         case Message.Type.BITFIELD:
                             List<Boolean> bitfield = Message.decodeBitfield(message);
                             this.peerRef.neighborBitfields.put(otherPeerId, bitfield);
-                            System.out.println(bitfield);
+                            // System.out.println(bitfield);
                             this.sendInterest();
                             break;
 
                         case Message.Type.PIECE:
-                            // TODO: Send request message if still unchoked
+                            Message.PieceData pieceData = Message.decodePiece(message);
+                            if (!this.peerRef.bitfield.get(pieceData.index())) {
+                                // System.out.println(pieceData.index());
+                                this.peerRef.bitfield.set(pieceData.index(), true);
+                                this.peerRef.pieceCount++;
+                                this.peerRef.fileMaker.writePiece(pieceData.index(), pieceData.fileData());
+                                this.sendHave(pieceData.index());
+
+                                this.peerRef.fileLogger.logDownloadedPiece(pieceData.index(), otherPeerId,
+                                        this.peerRef.pieceCount);
+
+                                if (this.peerRef.pieceCount.equals(this.peerRef.totalPieces)) {
+                                    this.peerRef.hasFile = true;
+                                    this.sendInterest();
+                                    this.close();
+                                    this.peerRef.fileLogger.logDownloadedCompleteFile();
+                                    return;
+                                }
+
+                                if (!unchokedBy.contains(otherPeerId)) {
+                                    this.sendRequest(otherPeerId);
+                                }
+                            }
                             break;
 
                         case Message.Type.CHOKE:
@@ -97,7 +123,7 @@ public class Client extends Thread {
                         case Message.Type.UNCHOKE:
                             unchokedBy.add(otherPeerId);
                             this.peerRef.fileLogger.logUnchokedBy(otherPeerId);
-                            // TODO: Send request message
+                            this.sendRequest(otherPeerId);
                             break;
 
                         default:
@@ -149,7 +175,7 @@ public class Client extends Thread {
 
             Boolean interested = false;
             for (int i = 0; i < this.peerRef.totalPieces; ++i) {
-                if (this.peerRef.bitfield.get(i).equals(false) && otherBitfield.get(i).equals(true)) {
+                if (!this.peerRef.bitfield.get(i) && otherBitfield.get(i)) {
                     interested = true;
                     break;
                 }
@@ -159,4 +185,31 @@ public class Client extends Thread {
         }
     }
 
+    public void sendRequest(Integer otherPeerId) throws IOException {
+        Socket connection = requestSockets.get(otherPeerId);
+        List<Boolean> otherBitfield = this.peerRef.neighborBitfields.get(otherPeerId);
+        List<Integer> otherPieceIndices = new ArrayList<>();
+
+        for (int i = 0; i < otherBitfield.size(); ++i) {
+            if (otherBitfield.get(i) && !this.peerRef.bitfield.get(i)) {
+                otherPieceIndices.add(i);
+            }
+        }
+
+        if (otherPieceIndices.isEmpty()) {
+            return;
+        }
+
+        Random random = new Random();
+        Integer pieceIndex = otherPieceIndices.get(random.nextInt(otherPieceIndices.size()));
+
+        connection.getOutputStream().write(Message.encodeRequest(pieceIndex));
+    }
+
+    public void sendHave(Integer pieceIndex) throws IOException {
+        for (Map.Entry<Integer, Socket> entry : requestSockets.entrySet()) {
+            Socket connection = entry.getValue();
+            connection.getOutputStream().write(Message.encodeHave(pieceIndex));
+        }
+    }
 }

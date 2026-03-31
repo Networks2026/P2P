@@ -5,6 +5,7 @@ import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.nio.BufferUnderflowException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -57,7 +58,7 @@ public class Server extends Thread {
                         if (!prev.equals(unchokedNeighbors)) {
                             peerRef.fileLogger.logPreferredNeighbors(new ArrayList<>(unchokedNeighbors));
                         }
-                        System.out.println("Unchoked Neighbors: " + unchokedNeighbors);
+                        // System.out.println("Unchoked Neighbors: " + unchokedNeighbors);
                     }
                 }, 0, this.peerRef.commonConfig.unchokingInterval() * 1000);
 
@@ -87,7 +88,8 @@ public class Server extends Thread {
                             }
                         }
 
-                        System.out.println("Optimistic Unchoked Neighbor: " + optimisticUnchokedNeighbor);
+                        // System.out.println("Optimistic Unchoked Neighbor: " +
+                        // optimisticUnchokedNeighbor);
                     }
                 }, 0, this.peerRef.commonConfig.optimisticUnchokingInterval() * 1000);
 
@@ -101,6 +103,13 @@ public class Server extends Thread {
                 }
             }
         } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            this.peerRef.fileMaker.closeConnection();
+            this.peerRef.fileReader.closeConnection();
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -153,6 +162,7 @@ public class Server extends Thread {
                     Message message = Message.decodeMessage(input);
 
                     Boolean interest;
+                    Integer pieceIndex;
                     switch (message.type()) {
                         case Message.Type.INTERESTED:
                             interest = Message.decodeInterest(message);
@@ -173,14 +183,27 @@ public class Server extends Thread {
                             break;
 
                         case Message.Type.REQUEST:
-                            // TODO: Send piece message if peer is unchoked
+                            pieceIndex = Message.decodeIndexField(message);
+                            if (unchokedNeighbors.contains(this.peerId) || (optimisticUnchokedNeighbor.isPresent()
+                                    && optimisticUnchokedNeighbor.get().equals(this.peerId))) {
+                                byte[] fileData = this.peerRef.fileReader.getPiece(pieceIndex);
+                                connection.getOutputStream().write(Message.encodePiece(
+                                        new Message.PieceData(pieceIndex, fileData),
+                                        this.peerRef.commonConfig.pieceSize()));
+                            }
                             break;
 
                         case Message.Type.HAVE:
-                            Integer pieceIndex = Message.decodeIndexField(message);
-                            List<Boolean> otherBitfield = this.peerRef.neighborBitfields.get(pieceIndex);
+                            pieceIndex = Message.decodeIndexField(message);
+                            List<Boolean> otherBitfield = this.peerRef.neighborBitfields.get(peerId);
 
-                            otherBitfield.set(pieceIndex, true);
+                            // System.out.println(this.peerRef.neighborBitfields);
+                            // System.out.println(pieceIndex);
+                            // System.out.println(otherBitfield);
+
+                            if (!this.peerRef.hasFile) {
+                                otherBitfield.set(pieceIndex, true);
+                            }
 
                             this.peerRef.recordHave();
                             this.peerRef.fileLogger.logReceivedHave(this.peerId, pieceIndex);
@@ -194,9 +217,16 @@ public class Server extends Thread {
                 } catch (SocketTimeoutException timeout) {
                     continue;
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    if (e instanceof BufferUnderflowException) {
+                        System.out.println(
+                                "Buffer Underflow (Most likely caused by closing the socket because of FILE DOWNLOAD!)");
+                    } else {
+                        e.printStackTrace();
+                    }
                     try {
+                        handlers.remove(this.peerId);
                         this.connection.close();
+                        return;
                     } catch (IOException e1) {
                         e1.printStackTrace();
                     }
@@ -208,7 +238,7 @@ public class Server extends Thread {
         public void sendChoke(Boolean choked) {
             try {
                 connection.getOutputStream().write(Message.encodeChoke(choked));
-            } catch (IOException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }
@@ -246,7 +276,10 @@ public class Server extends Thread {
 
         // Randomization if two neighbors have the same rate
         Collections.shuffle(entries);
-        Collections.sort(entries, Entry.comparingByValue());
+
+        if (!this.peerRef.hasFile) {
+            Collections.sort(entries, Entry.comparingByValue());
+        }
 
         // Finds N top preferred neighbors
         Set<Integer> topNeighbors = entries.isEmpty() ? Set.of()
@@ -297,9 +330,10 @@ public class Server extends Thread {
     /**
      * Sends choking messages to normally unchoked or choked peers. Optimistic
      * neighbors are dealt with separately in their interval.
+     * 
+     * @throws IOException
      */
     private void sendChokeMessages() {
-
         for (Entry<Integer, Handler> entry : this.handlers.entrySet()) {
             if (optimisticUnchokedNeighbor.isPresent() && entry.getKey().equals(optimisticUnchokedNeighbor.get())) {
                 continue;
