@@ -3,10 +3,13 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class FileMaker {
 
     private final RandomAccessFile fileCon;
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     public final Integer pieceSize;
     public final Integer fileSize;
@@ -25,7 +28,7 @@ public class FileMaker {
 
         this.pieceSize = pieceSize;
         this.fileSize = fileSize;
-        this.pieceAmt = fileSize / pieceSize;
+        this.pieceAmt = Math.ceilDiv(fileSize, pieceSize);
     }
 
     /**
@@ -37,24 +40,24 @@ public class FileMaker {
      */
     public void writePiece(int pieceNum, byte[] pieceArray) throws IOException {
 
-        if (pieceNum > pieceAmt || pieceNum < 0) {
-            return;
+        if (pieceNum > pieceAmt - 1 || pieceNum < 0) {
+            throw new RuntimeException("Unexpected pieceNum: " + pieceNum);
         }
 
         if (pieceArray.length != this.pieceSize) {
-            return;
+            throw new RuntimeException("Unexpected pieceArray size: " + pieceArray.length);
         }
 
-        boolean lastPiece = pieceNum == this.pieceAmt;
-        if (lastPiece) {
-            // System.out.println(pieceNum);
+        lock.writeLock().lock();
+        try {
+            boolean lastPiece = pieceNum == this.pieceAmt - 1;
+            long offset = (long) this.pieceSize * pieceNum;
+            int pieceWriteSize = lastPiece ? (this.fileSize % this.pieceSize) : this.pieceSize;
+            fileCon.seek(offset);
+            fileCon.write(pieceArray, 0, pieceWriteSize);
+        } finally {
+            lock.writeLock().unlock();
         }
-
-        long offset = (long) this.pieceSize * pieceNum;
-        int pieceWriteSize = lastPiece ? (this.fileSize % this.pieceSize) : this.pieceSize;
-        fileCon.seek(offset);
-
-        fileCon.write(pieceArray, 0, pieceWriteSize);
     }
 
     public void closeConnection() throws IOException {

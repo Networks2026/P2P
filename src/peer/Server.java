@@ -68,22 +68,26 @@ public class Server extends Thread {
                         optimisticUnchokedNeighbor = findOptimisticUnchokedNeighbor();
 
                         if (prev.isEmpty()) {
-                            if (optimisticUnchokedNeighbor.isPresent()) {
+                            if (optimisticUnchokedNeighbor.isPresent()
+                                    && handlers.containsKey(optimisticUnchokedNeighbor.get())) {
                                 handlers.get(optimisticUnchokedNeighbor.get()).sendChoke(false);
-                                peerRef.fileLogger.logOptimisticallyUnchokedNeighbor(optimisticUnchokedNeighbor.get());
+                                peerRef.fileLogger
+                                        .logOptimisticallyUnchokedNeighbor(optimisticUnchokedNeighbor.get());
                             }
                         } else {
-                            if (optimisticUnchokedNeighbor.isEmpty()) {
+                            if (optimisticUnchokedNeighbor.isEmpty() && handlers.containsKey(prev.get())) {
                                 handlers.get(prev.get()).sendChoke(true);
-                            } else {
+                            } else if (optimisticUnchokedNeighbor.isPresent()) {
                                 Integer prevPeerId = prev.get();
                                 Integer newPeerId = optimisticUnchokedNeighbor.get();
                                 if (!prevPeerId.equals(newPeerId)) {
-                                    if (!unchokedNeighbors.contains(prevPeerId)) {
+                                    if (!unchokedNeighbors.contains(prevPeerId) && handlers.containsKey(prevPeerId)) {
                                         handlers.get(prevPeerId).sendChoke(true);
                                     }
-                                    handlers.get(newPeerId).sendChoke(false);
-                                    peerRef.fileLogger.logOptimisticallyUnchokedNeighbor(newPeerId);
+                                    if (handlers.containsKey(newPeerId)) {
+                                        handlers.get(newPeerId).sendChoke(false);
+                                        peerRef.fileLogger.logOptimisticallyUnchokedNeighbor(newPeerId);
+                                    }
                                 }
                             }
                         }
@@ -281,11 +285,15 @@ public class Server extends Thread {
             Collections.sort(entries, Entry.comparingByValue());
         }
 
+        int topNeighborsStartingIndex = entries.size() - this.peerRef.commonConfig.numberOfPreferredNeighbors();
+        if (topNeighborsStartingIndex < 0) {
+            topNeighborsStartingIndex = 0;
+        }
+
         // Finds N top preferred neighbors
         Set<Integer> topNeighbors = entries.isEmpty() ? Set.of()
                 : new HashSet<>(entries
-                        .subList(entries.size() - this.peerRef.commonConfig.numberOfPreferredNeighbors(),
-                                entries.size())
+                        .subList(topNeighborsStartingIndex, entries.size())
                         .stream()
                         .map(entry -> entry.getKey())
                         .toList());
@@ -297,6 +305,7 @@ public class Server extends Thread {
             }
         }
 
+        // System.out.println(topNeighbors);
         return topNeighbors;
     }
 

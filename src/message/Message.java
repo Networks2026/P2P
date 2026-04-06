@@ -80,6 +80,7 @@ public record Message(Integer length, Type type, byte[] payload) {
         int index = byteBuffer.getInt();
         int remainingLength = byteBuffer.remaining();
         byte[] remainingBytes = new byte[remainingLength];
+        System.out.println(remainingBytes.length);
         byteBuffer.get(remainingBytes);
 
         return new PieceData(index, remainingBytes);
@@ -155,7 +156,7 @@ public record Message(Integer length, Type type, byte[] payload) {
         Integer length = ByteBuffer.wrap(inputStream.readNBytes(LENGTH_LEN)).getInt();
         Type type = Type.fromCode(ByteBuffer.wrap(inputStream.readNBytes(TYPE_LEN)).get());
         byte[] payload = inputStream.readNBytes(length);
-        System.out.println(length + " " + type);
+        // System.out.println(length + " " + type);
         return new Message(length, type, payload);
     }
 

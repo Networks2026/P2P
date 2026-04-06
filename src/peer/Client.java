@@ -2,6 +2,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
@@ -92,12 +93,16 @@ public class Client extends Thread {
                         case Message.Type.PIECE:
                             Message.PieceData pieceData = Message.decodePiece(message);
                             if (!this.peerRef.bitfield.get(pieceData.index())) {
-                                // System.out.println(pieceData.index());
                                 this.peerRef.bitfield.set(pieceData.index(), true);
                                 this.peerRef.pieceCount++;
+
+                                BigInteger currentNeightborRate = this.peerRef.ratesFromNeighbors.get(otherPeerId);
+                                this.peerRef.ratesFromNeighbors.put(otherPeerId,
+                                        currentNeightborRate == null ? BigInteger.ONE
+                                                : currentNeightborRate.add(BigInteger.ONE));
+
                                 this.peerRef.fileMaker.writePiece(pieceData.index(), pieceData.fileData());
                                 this.sendHave(pieceData.index());
-
                                 this.peerRef.fileLogger.logDownloadedPiece(pieceData.index(), otherPeerId,
                                         this.peerRef.pieceCount);
 
