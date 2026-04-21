@@ -1,11 +1,6 @@
 import java.io.IOException;
 import java.util.Map;
 
-import config.CommonConfigData;
-import config.PeerConfigData;
-import logging.FileLogger;
-import peer.Peer;
-
 public class peerProcess {
 
     public static void main(String[] args) {

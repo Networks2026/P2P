@@ -6,6 +6,7 @@ import java.math.BigInteger;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
+import java.nio.BufferUnderflowException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -135,6 +136,12 @@ public class Client extends Thread {
                             System.out.println(message.type());
                             break;
                     }
+                } catch (IllegalArgumentException iae) {
+                    iae.printStackTrace();
+                    continue;
+                } catch (BufferUnderflowException bue) {
+                    bue.printStackTrace();
+                    continue;
                 } catch (SocketTimeoutException timeout) {
                     continue;
                 } catch (EOFException eof) {

@@ -5,7 +5,6 @@ import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
-import java.nio.BufferUnderflowException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -19,6 +18,7 @@ import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Handler;
 import java.util.stream.Collectors;
 
 /**
@@ -221,20 +221,8 @@ public class Server extends Thread {
                 } catch (SocketTimeoutException timeout) {
                     continue;
                 } catch (Exception e) {
-                    if (e instanceof BufferUnderflowException) {
-                        System.out.println(
-                                "Buffer Underflow (Most likely caused by closing the socket because of FILE DOWNLOAD!)");
-                    } else {
-                        e.printStackTrace();
-                    }
-                    try {
-                        handlers.remove(this.peerId);
-                        this.connection.close();
-                        return;
-                    } catch (IOException e1) {
-                        e1.printStackTrace();
-                    }
-                    break;
+                    e.printStackTrace();
+                    continue;
                 }
             }
         }
