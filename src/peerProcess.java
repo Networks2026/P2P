@@ -12,9 +12,9 @@ public class peerProcess {
             int peerProcessId = Integer.parseInt(args[0]);
             System.out.println("Starting Peer Process " + peerProcessId);
 
-            CommonConfigData commonConfig = CommonConfigData.readInData("TestCommon.cfg");
+            CommonConfigData commonConfig = CommonConfigData.readInData("Common.cfg");
 
-            Map<Integer, PeerConfigData> peerConfig = PeerConfigData.readInData("TestPeerInfo.cfg");
+            Map<Integer, PeerConfigData> peerConfig = PeerConfigData.readInData("PeerInfo.cfg");
 
             FileLogger fileLogger = new FileLogger(peerProcessId);
 
