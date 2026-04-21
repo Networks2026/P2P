@@ -1,13 +1,16 @@
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.locks.ReadWriteLock;
 
 public class FileMaker {
 
-    private final RandomAccessFile fileCon;
+    private final FileChannel fileCon;
     private final ReadWriteLock lock;
 
     public final Integer pieceSize;
@@ -15,13 +18,11 @@ public class FileMaker {
     public final Integer pieceAmt;
 
     public FileMaker(String path, Integer pieceSize, Integer fileSize, ReadWriteLock lock)
-            throws FileNotFoundException {
+            throws IOException {
 
         try {
-            // Makes file if it doesnt exist - which it usually doesn't for a new client
-            this.fileCon = new RandomAccessFile(path, "rw");
+            this.fileCon = FileChannel.open(Path.of(path), StandardOpenOption.READ, StandardOpenOption.WRITE);
         } catch (FileNotFoundException e) {
-            // Log the error the user made
             System.err.println("Error opening file");
             throw e;
         }
@@ -32,33 +33,63 @@ public class FileMaker {
         this.lock = lock;
     }
 
-    /**
-     * Piece num starts at 0 instead of 1
-     * 
-     * @param pieceNum
-     * @param pieceArray
-     * @throws IOException
-     */
     public void writePiece(int pieceNum, byte[] pieceArray) throws IOException {
-
-        if (pieceNum > pieceAmt - 1 || pieceNum < 0) {
+        if (pieceNum < 0 || pieceNum >= pieceAmt) {
             throw new RuntimeException("Unexpected pieceNum: " + pieceNum);
         }
 
-        if (pieceArray.length != this.pieceSize) {
+        int bytesToWrite = getPieceLength(pieceNum);
+
+        if (pieceArray.length != pieceSize && pieceArray.length != bytesToWrite) {
             throw new RuntimeException("Unexpected pieceArray size: " + pieceArray.length);
         }
 
+        ByteBuffer buffer = ByteBuffer.wrap(pieceArray, 0, bytesToWrite);
+        long offset = getPieceOffset(pieceNum);
+
         lock.writeLock().lock();
         try {
-            boolean lastPiece = pieceNum == this.pieceAmt - 1;
-            long offset = (long) this.pieceSize * pieceNum;
-            int pieceWriteSize = lastPiece ? (this.fileSize % this.pieceSize) : this.pieceSize;
-            fileCon.seek(offset);
-            fileCon.write(pieceArray, 0, pieceWriteSize);
+            while (buffer.hasRemaining()) {
+                fileCon.write(buffer, offset + buffer.position());
+            }
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    public byte[] getPiece(int pieceNum) throws IOException {
+        if (pieceNum < 0 || pieceNum >= pieceAmt) {
+            throw new RuntimeException("Unexpected pieceNum: " + pieceNum);
+        }
+
+        int bytesToRead = getPieceLength(pieceNum);
+        byte[] pieceArray = new byte[pieceSize];
+        ByteBuffer buffer = ByteBuffer.wrap(pieceArray, 0, bytesToRead);
+        long offset = getPieceOffset(pieceNum);
+
+        lock.readLock().lock();
+        try {
+            while (buffer.hasRemaining()) {
+                int bytesRead = fileCon.read(buffer, offset + buffer.position());
+
+                if (bytesRead == -1) {
+                    throw new IOException("Unexpected EOF while reading piece " + pieceNum);
+                }
+            }
+        } finally {
+            lock.readLock().unlock();
+        }
+
+        return pieceArray;
+    }
+
+    private long getPieceOffset(int pieceNum) {
+        return (long) pieceNum * pieceSize;
+    }
+
+    private int getPieceLength(int pieceNum) {
+        long offset = getPieceOffset(pieceNum);
+        return (int) Math.min(pieceSize, fileSize - offset);
     }
 
     public void closeConnection() throws IOException {

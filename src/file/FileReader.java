@@ -1,11 +1,14 @@
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.locks.ReadWriteLock;
 
 public class FileReader {
 
-    private final RandomAccessFile fileCon;
+    private final FileChannel fileCon;
     private final ReadWriteLock lock;
 
     public final Integer pieceSize;
@@ -13,9 +16,9 @@ public class FileReader {
     public final Integer pieceAmt;
 
     public FileReader(String path, Integer pieceSize, Integer fileSize, ReadWriteLock lock)
-            throws FileNotFoundException {
+            throws IOException {
         try {
-            this.fileCon = new RandomAccessFile(path, "r");
+            this.fileCon = FileChannel.open(Path.of(path), StandardOpenOption.READ);
         } catch (FileNotFoundException e) {
             // Log the error the user made
             System.err.println("Error reading file");
@@ -36,33 +39,38 @@ public class FileReader {
      * @throws IOException
      */
     public byte[] getPiece(int pieceNum) throws IOException {
-        // Don't attempt to read
-        // Subtract one from piece amt since first piece is 0 and not 1
-        if (pieceNum > pieceAmt - 1 || pieceNum < 0) {
+        if (pieceNum < 0 || pieceNum >= pieceAmt) {
             throw new RuntimeException("Unexpected pieceNum: " + pieceNum);
         }
 
-        byte[] pieceArray = new byte[this.pieceSize];
+        int bytesToRead = getPieceLength(pieceNum);
+        byte[] pieceArray = new byte[pieceSize];
+        ByteBuffer buffer = ByteBuffer.wrap(pieceArray, 0, bytesToRead);
+        long offset = getPieceOffset(pieceNum);
 
         lock.readLock().lock();
         try {
-            // Get offset and set it
-            long offset = (long) this.pieceSize * pieceNum;
-            fileCon.seek(offset);
-            boolean lastPiece = pieceNum == this.pieceAmt - 1;
-            int pieceWriteSize = lastPiece ? (this.fileSize % this.pieceSize) : this.pieceSize;
+            while (buffer.hasRemaining()) {
+                int bytesRead = fileCon.read(buffer, offset + buffer.position());
 
-            // Read the file given the offset and pieceSize
-            try {
-                fileCon.read(pieceArray, 0, pieceWriteSize);
-            } catch (IOException ex) {
-                System.err.println("Error reading file piece");
+                if (bytesRead == -1) {
+                    throw new IOException("Unexpected EOF while reading piece " + pieceNum);
+                }
             }
         } finally {
             lock.readLock().unlock();
         }
 
         return pieceArray;
+    }
+
+    private long getPieceOffset(int pieceNum) {
+        return (long) pieceNum * pieceSize;
+    }
+
+    private int getPieceLength(int pieceNum) {
+        long offset = getPieceOffset(pieceNum);
+        return (int) Math.min(pieceSize, fileSize - offset);
     }
 
     public void closeConnection() throws IOException {

@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class Client extends Thread {
     private final Peer peerRef;
+    private final Object writeLock = new Object();
 
     private Map<Integer, Socket> requestSockets = new ConcurrentHashMap<>();
 
@@ -38,7 +39,7 @@ public class Client extends Thread {
         Socket newSocket = new Socket(peerData.hostName(), peerData.port());
 
         OutputStream outputStream = newSocket.getOutputStream();
-        outputStream.write(Message.encodeHandshake(this.peerRef.id));
+        sendMessage(outputStream, Message.encodeHandshake(this.peerRef.id));
 
         InputStream inputStream = newSocket.getInputStream();
         while (true) {
@@ -196,7 +197,7 @@ public class Client extends Thread {
                 }
             }
 
-            connection.getOutputStream().write(Message.encodeInterest(interested));
+            sendMessage(connection.getOutputStream(), Message.encodeInterest(interested));
         }
     }
 
@@ -218,13 +219,13 @@ public class Client extends Thread {
         Random random = new Random();
         Integer pieceIndex = otherPieceIndices.get(random.nextInt(otherPieceIndices.size()));
 
-        connection.getOutputStream().write(Message.encodeRequest(pieceIndex));
+        sendMessage(connection.getOutputStream(), Message.encodeRequest(pieceIndex));
     }
 
     public void sendHave(Integer pieceIndex) throws IOException {
         for (Map.Entry<Integer, Socket> entry : requestSockets.entrySet()) {
             Socket connection = entry.getValue();
-            connection.getOutputStream().write(Message.encodeHave(pieceIndex));
+            sendMessage(connection.getOutputStream(), Message.encodeHave(pieceIndex));
         }
     }
 
@@ -233,5 +234,12 @@ public class Client extends Thread {
         handlers.remove(peerId);
         requestSockets.get(peerId).close();
         requestSockets.remove(peerId);
+    }
+
+    public void sendMessage(OutputStream output, byte[] message) throws IOException {
+        synchronized (writeLock) {
+            output.write(message);
+            output.flush();
+        }
     }
 }
