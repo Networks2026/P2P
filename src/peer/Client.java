@@ -6,7 +6,6 @@ import java.math.BigInteger;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
-import java.nio.BufferUnderflowException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +21,8 @@ public class Client extends Thread {
     // This may not be needed, not sure yet
     private Set<Integer> unchokedBy = ConcurrentHashMap.newKeySet();
 
+    private Map<Integer, Handler> handlers = new ConcurrentHashMap<>();
+
     public Client(Peer peerRef) {
         this.peerRef = peerRef;
     };
@@ -35,7 +36,6 @@ public class Client extends Thread {
 
         PeerConfigData peerData = this.peerRef.peerConfig.get(peerId);
         Socket newSocket = new Socket(peerData.hostName(), peerData.port());
-        newSocket.setSoTimeout(200);
 
         OutputStream outputStream = newSocket.getOutputStream();
         outputStream.write(Message.encodeHandshake(this.peerRef.id));
@@ -59,9 +59,22 @@ public class Client extends Thread {
         if (!noLog) {
             this.peerRef.fileLogger.logConnectionTo(peerId);
         }
+
+        System.out.println("Handshaked from client to " + peerId);
         requestSockets.put(peerId, newSocket);
+
+        try {
+            Handler handler = new Handler(peerId);
+            handlers.put(peerId, handler);
+            handler.start();
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
+    @Override
     public void run() {
         for (Integer peerId : this.peerRef.peerConfig.keySet()) {
             if (this.peerRef.id.equals(peerId)) {
@@ -69,67 +82,72 @@ public class Client extends Thread {
             }
 
             try {
-                this.connectTo(peerId, false);
-            } catch (Exception e) {
+                connectTo(peerId, false);
+            } catch (IOException e) {
                 e.printStackTrace();
-                return;
             }
         }
+    }
 
-        while (!requestSockets.isEmpty()) {
-            for (Map.Entry<Integer, Socket> entry : requestSockets.entrySet()) {
+    private class Handler extends Thread {
+        private final Integer peerId;
+
+        public Handler(Integer peerId) throws UnknownHostException, IOException {
+            this.peerId = peerId;
+        }
+
+        public void run() {
+            while (true) {
                 try {
-                    InputStream input = entry.getValue().getInputStream();
+                    if (peerRef.pieceCount.compareTo(peerRef.totalPieces) >= 0) {
+                        peerRef.hasFile = true;
+                        sendInterest();
+                        close(this.peerId);
+                        peerRef.fileLogger.logDownloadedCompleteFile();
+                        return;
+                    }
+
+                    InputStream input = requestSockets.get(this.peerId).getInputStream();
                     Message message = Message.decodeMessage(input);
-                    Integer otherPeerId = entry.getKey();
 
                     switch (message.type()) {
                         case Message.Type.BITFIELD:
                             List<Boolean> bitfield = Message.decodeBitfield(message);
-                            this.peerRef.neighborBitfields.put(otherPeerId, bitfield);
-                            // System.out.println(bitfield);
-                            this.sendInterest();
+                            peerRef.neighborBitfields.put(peerId, bitfield);
+                            sendInterest();
                             break;
 
                         case Message.Type.PIECE:
                             Message.PieceData pieceData = Message.decodePiece(message);
-                            if (!this.peerRef.bitfield.get(pieceData.index())) {
-                                this.peerRef.bitfield.set(pieceData.index(), true);
-                                this.peerRef.pieceCount++;
-
-                                BigInteger currentNeightborRate = this.peerRef.ratesFromNeighbors.get(otherPeerId);
-                                this.peerRef.ratesFromNeighbors.put(otherPeerId,
+                            if (!peerRef.bitfield.get(pieceData.index())) {
+                                BigInteger currentNeightborRate = peerRef.ratesFromNeighbors.get(peerId);
+                                peerRef.ratesFromNeighbors.put(peerId,
                                         currentNeightborRate == null ? BigInteger.ONE
                                                 : currentNeightborRate.add(BigInteger.ONE));
 
-                                this.peerRef.fileMaker.writePiece(pieceData.index(), pieceData.fileData());
-                                this.sendHave(pieceData.index());
-                                this.peerRef.fileLogger.logDownloadedPiece(pieceData.index(), otherPeerId,
-                                        this.peerRef.pieceCount);
+                                peerRef.fileMaker.writePiece(pieceData.index(), pieceData.fileData());
+                                peerRef.bitfield.set(pieceData.index(), true);
+                                peerRef.pieceCount++;
 
-                                if (this.peerRef.pieceCount.equals(this.peerRef.totalPieces)) {
-                                    this.peerRef.hasFile = true;
-                                    this.sendInterest();
-                                    this.close();
-                                    this.peerRef.fileLogger.logDownloadedCompleteFile();
-                                    return;
-                                }
+                                sendHave(pieceData.index());
+                                peerRef.fileLogger.logDownloadedPiece(pieceData.index(), peerId,
+                                        peerRef.pieceCount);
 
-                                if (!unchokedBy.contains(otherPeerId)) {
-                                    this.sendRequest(otherPeerId);
+                                if (!unchokedBy.contains(peerId)) {
+                                    sendRequest(peerId);
                                 }
                             }
                             break;
 
                         case Message.Type.CHOKE:
-                            unchokedBy.remove(otherPeerId);
-                            this.peerRef.fileLogger.logChokedBy(otherPeerId);
+                            unchokedBy.remove(peerId);
+                            peerRef.fileLogger.logChokedBy(peerId);
                             break;
 
                         case Message.Type.UNCHOKE:
-                            unchokedBy.add(otherPeerId);
-                            this.peerRef.fileLogger.logUnchokedBy(otherPeerId);
-                            this.sendRequest(otherPeerId);
+                            unchokedBy.add(peerId);
+                            peerRef.fileLogger.logUnchokedBy(peerId);
+                            sendRequest(peerId);
                             break;
 
                         default:
@@ -139,9 +157,6 @@ public class Client extends Thread {
                 } catch (IllegalArgumentException iae) {
                     iae.printStackTrace();
                     continue;
-                } catch (BufferUnderflowException bue) {
-                    bue.printStackTrace();
-                    continue;
                 } catch (SocketTimeoutException timeout) {
                     continue;
                 } catch (EOFException eof) {
@@ -149,26 +164,14 @@ public class Client extends Thread {
                 } catch (Exception e) {
                     e.printStackTrace();
                     try {
-                        entry.getValue().close();
+                        requestSockets.get(this.peerId).close();
                     } catch (IOException e1) {
                         e1.printStackTrace();
                     }
-                    requestSockets.remove(entry.getKey());
+                    requestSockets.remove(peerId);
                 }
             }
         }
-        System.out.println("Client has no more remaining connections");
-    }
-
-    public void close() {
-        for (Map.Entry<Integer, Socket> entry : requestSockets.entrySet()) {
-            try {
-                entry.getValue().close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-        requestSockets.clear();
     }
 
     public Map<Integer, Socket> getConnectedTo() {
@@ -223,5 +226,12 @@ public class Client extends Thread {
             Socket connection = entry.getValue();
             connection.getOutputStream().write(Message.encodeHave(pieceIndex));
         }
+    }
+
+    public void close(Integer peerId) throws IOException {
+        handlers.get(peerId).interrupt();
+        handlers.remove(peerId);
+        requestSockets.get(peerId).close();
+        requestSockets.remove(peerId);
     }
 }

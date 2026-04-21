@@ -4,18 +4,18 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class FileMaker {
 
     private final RandomAccessFile fileCon;
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private final ReadWriteLock lock;
 
     public final Integer pieceSize;
     public final Integer fileSize;
     public final Integer pieceAmt;
 
-    public FileMaker(String path, Integer pieceSize, Integer fileSize) throws FileNotFoundException {
+    public FileMaker(String path, Integer pieceSize, Integer fileSize, ReadWriteLock lock)
+            throws FileNotFoundException {
 
         try {
             // Makes file if it doesnt exist - which it usually doesn't for a new client
@@ -29,6 +29,7 @@ public class FileMaker {
         this.pieceSize = pieceSize;
         this.fileSize = fileSize;
         this.pieceAmt = Math.ceilDiv(fileSize, pieceSize);
+        this.lock = lock;
     }
 
     /**

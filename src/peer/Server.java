@@ -4,7 +4,9 @@ import java.io.OutputStream;
 import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.nio.BufferUnderflowException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -18,7 +20,6 @@ import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Handler;
 import java.util.stream.Collectors;
 
 /**
@@ -131,8 +132,6 @@ public class Server extends Thread {
             this.connection = connection;
             this.peerRef = peerRef;
 
-            connection.setSoTimeout(200);
-
             InputStream input = connection.getInputStream();
             while (true) {
                 try {
@@ -201,10 +200,6 @@ public class Server extends Thread {
                             pieceIndex = Message.decodeIndexField(message);
                             List<Boolean> otherBitfield = this.peerRef.neighborBitfields.get(peerId);
 
-                            // System.out.println(this.peerRef.neighborBitfields);
-                            // System.out.println(pieceIndex);
-                            // System.out.println(otherBitfield);
-
                             if (!this.peerRef.hasFile) {
                                 otherBitfield.set(pieceIndex, true);
                             }
@@ -220,9 +215,21 @@ public class Server extends Thread {
 
                 } catch (SocketTimeoutException timeout) {
                     continue;
+                } catch (SocketException e) {
+                    e.printStackTrace();
+                    try {
+                        handlers.remove(this.peerId);
+                        this.connection.close();
+                        return;
+                    } catch (IOException e1) {
+                        e1.printStackTrace();
+                    }
+                    return;
+                } catch (BufferUnderflowException e) {
+                    e.printStackTrace();
+                    return;
                 } catch (Exception e) {
                     e.printStackTrace();
-                    continue;
                 }
             }
         }

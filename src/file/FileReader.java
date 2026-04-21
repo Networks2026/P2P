@@ -2,18 +2,18 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class FileReader {
 
     private final RandomAccessFile fileCon;
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private final ReadWriteLock lock;
 
     public final Integer pieceSize;
     public final Integer fileSize;
     public final Integer pieceAmt;
 
-    public FileReader(String path, Integer pieceSize, Integer fileSize) throws FileNotFoundException {
+    public FileReader(String path, Integer pieceSize, Integer fileSize, ReadWriteLock lock)
+            throws FileNotFoundException {
         try {
             this.fileCon = new RandomAccessFile(path, "r");
         } catch (FileNotFoundException e) {
@@ -24,6 +24,7 @@ public class FileReader {
         this.pieceSize = pieceSize;
         this.fileSize = fileSize;
         this.pieceAmt = (int) Math.ceilDiv(fileSize, pieceSize);
+        this.lock = lock;
     }
 
     /**
