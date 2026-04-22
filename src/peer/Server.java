@@ -167,6 +167,12 @@ public class Server extends Thread {
                     Boolean interest;
                     Integer pieceIndex;
                     switch (message.type()) {
+                        case Message.Type.BITFIELD:
+                            List<Boolean> bitfield = Message.decodeBitfield(message);
+                            this.peerRef.neighborBitfields.put(this.peerId, bitfield);
+                            this.peerRef.maybeShutdown();
+                            break;
+
                         case Message.Type.INTERESTED:
                             interest = Message.decodeInterest(message);
                             assert interest;
@@ -200,7 +206,7 @@ public class Server extends Thread {
                             pieceIndex = Message.decodeIndexField(message);
                             List<Boolean> otherBitfield = this.peerRef.neighborBitfields.get(peerId);
 
-                            if (!this.peerRef.hasFile) {
+                            if (otherBitfield != null) {
                                 otherBitfield.set(pieceIndex, true);
                             }
 
@@ -216,17 +222,10 @@ public class Server extends Thread {
                 } catch (SocketTimeoutException timeout) {
                     continue;
                 } catch (SocketException e) {
-                    e.printStackTrace();
-                    try {
-                        handlers.remove(this.peerId);
-                        this.connection.close();
-                        return;
-                    } catch (IOException e1) {
-                        e1.printStackTrace();
-                    }
+                    cleanup();
                     return;
                 } catch (BufferUnderflowException e) {
-                    e.printStackTrace();
+                    cleanup();
                     return;
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -237,8 +236,10 @@ public class Server extends Thread {
         public void sendChoke(Boolean choked) {
             try {
                 sendMessage(Message.encodeChoke(choked));
-            } catch (Exception e) {
-                e.printStackTrace();
+            } catch (SocketException e) {
+                cleanup();
+            } catch (IOException e) {
+                cleanup();
             }
         }
 
@@ -247,6 +248,17 @@ public class Server extends Thread {
                 OutputStream output = connection.getOutputStream();
                 output.write(message);
                 output.flush();
+            }
+        }
+
+        private void cleanup() {
+            handlers.remove(this.peerId);
+            peerRef.neighborsInterested.remove(this.peerId);
+            try {
+                if (!this.connection.isClosed()) {
+                    this.connection.close();
+                }
+            } catch (IOException ignored) {
             }
         }
 

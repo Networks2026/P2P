@@ -57,6 +57,8 @@ public class Client extends Thread {
             }
         }
 
+        sendMessage(outputStream, Message.encodeBitfield(this.peerRef.bitfield));
+
         if (!noLog) {
             this.peerRef.fileLogger.logConnectionTo(peerId);
         }
@@ -100,21 +102,27 @@ public class Client extends Thread {
         public void run() {
             while (true) {
                 try {
-                    if (peerRef.pieceCount.compareTo(peerRef.totalPieces) >= 0) {
-                        peerRef.hasFile = true;
-                        sendInterest();
-                        close(this.peerId);
-                        peerRef.fileLogger.logDownloadedCompleteFile();
+                    if (Thread.currentThread().isInterrupted()) {
                         return;
                     }
 
-                    InputStream input = requestSockets.get(this.peerId).getInputStream();
+                    if (!peerRef.hasFile && peerRef.pieceCount.compareTo(peerRef.totalPieces) >= 0) {
+                        peerRef.handleOwnCompletion();
+                    }
+
+                    Socket socket = requestSockets.get(this.peerId);
+                    if (socket == null) {
+                        return;
+                    }
+
+                    InputStream input = socket.getInputStream();
                     Message message = Message.decodeMessage(input);
 
                     switch (message.type()) {
                         case Message.Type.BITFIELD:
                             List<Boolean> bitfield = Message.decodeBitfield(message);
                             peerRef.neighborBitfields.put(peerId, bitfield);
+                            peerRef.maybeShutdown();
                             sendInterest();
                             break;
 
@@ -131,6 +139,7 @@ public class Client extends Thread {
                                 peerRef.pieceCount++;
 
                                 sendHave(pieceData.index());
+                                peerRef.maybeShutdown();
                                 peerRef.fileLogger.logDownloadedPiece(pieceData.index(), peerId,
                                         peerRef.pieceCount);
 
@@ -161,8 +170,11 @@ public class Client extends Thread {
                 } catch (SocketTimeoutException timeout) {
                     continue;
                 } catch (EOFException eof) {
-                    eof.printStackTrace();
+                    return;
                 } catch (Exception e) {
+                    if (!requestSockets.containsKey(this.peerId)) {
+                        return;
+                    }
                     e.printStackTrace();
                     try {
                         requestSockets.get(this.peerId).close();
@@ -234,6 +246,19 @@ public class Client extends Thread {
         handlers.remove(peerId);
         requestSockets.get(peerId).close();
         requestSockets.remove(peerId);
+    }
+
+    public void closeAll() throws IOException {
+        for (Integer peerId : new ArrayList<>(requestSockets.keySet())) {
+            Socket socket = requestSockets.remove(peerId);
+            Handler handler = handlers.remove(peerId);
+            if (handler != null && handler != Thread.currentThread()) {
+                handler.interrupt();
+            }
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
+        }
     }
 
     public void sendMessage(OutputStream output, byte[] message) throws IOException {
