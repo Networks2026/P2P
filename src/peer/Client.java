@@ -134,7 +134,7 @@ public class Client extends Thread {
                                 peerRef.fileLogger.logDownloadedPiece(pieceData.index(), peerId,
                                         peerRef.pieceCount);
 
-                                if (!unchokedBy.contains(peerId)) {
+                                if (unchokedBy.contains(peerId)) {
                                     sendRequest(peerId);
                                 }
                             }
