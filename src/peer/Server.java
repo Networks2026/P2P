@@ -127,6 +127,7 @@ public class Server extends Thread {
         private Socket connection;
         private Integer peerId;
         private Peer peerRef;
+        private final Object writeLock = new Object();
 
         public Handler(Socket connection, Peer peerRef) throws IOException {
             this.connection = connection;
@@ -148,9 +149,8 @@ public class Server extends Thread {
             }
             handlers.put(peerId, this);
 
-            OutputStream outputStream = connection.getOutputStream();
-            outputStream.write(Message.encodeHandshake(this.peerRef.id));
-            outputStream.write(Message.encodeBitfield(this.peerRef.bitfield));
+            sendMessage(Message.encodeHandshake(this.peerRef.id));
+            sendMessage(Message.encodeBitfield(this.peerRef.bitfield));
         }
 
         /**
@@ -190,7 +190,7 @@ public class Server extends Thread {
                             if (unchokedNeighbors.contains(this.peerId) || (optimisticUnchokedNeighbor.isPresent()
                                     && optimisticUnchokedNeighbor.get().equals(this.peerId))) {
                                 byte[] fileData = this.peerRef.fileReader.getPiece(pieceIndex);
-                                connection.getOutputStream().write(Message.encodePiece(
+                                sendMessage(Message.encodePiece(
                                         new Message.PieceData(pieceIndex, fileData),
                                         this.peerRef.commonConfig.pieceSize()));
                             }
@@ -236,9 +236,17 @@ public class Server extends Thread {
 
         public void sendChoke(Boolean choked) {
             try {
-                connection.getOutputStream().write(Message.encodeChoke(choked));
+                sendMessage(Message.encodeChoke(choked));
             } catch (Exception e) {
                 e.printStackTrace();
+            }
+        }
+
+        private void sendMessage(byte[] message) throws IOException {
+            synchronized (writeLock) {
+                OutputStream output = connection.getOutputStream();
+                output.write(message);
+                output.flush();
             }
         }
 
