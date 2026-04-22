@@ -38,6 +38,8 @@ public class Peer {
 
     protected Client client;
     private Server server;
+    private volatile boolean completionAnnounced;
+    private volatile boolean shutdownTriggered;
 
     /**
      * Constructor
@@ -102,5 +104,44 @@ public class Peer {
         if (!this.hasFile) {
             this.client.sendInterest();
         }
+        maybeShutdown();
+    }
+
+    public void handleOwnCompletion() throws IOException {
+        this.hasFile = true;
+        if (!completionAnnounced) {
+            completionAnnounced = true;
+            this.fileLogger.logDownloadedCompleteFile();
+            System.out.println("Peer " + this.id + " has finished.");
+            this.client.sendInterest();
+        }
+        maybeShutdown();
+    }
+
+    public void maybeShutdown() {
+        if (shutdownTriggered || !this.hasFile || this.neighborBitfields.size() < this.peerConfig.size() - 1) {
+            return;
+        }
+
+        for (Integer peerId : this.peerConfig.keySet()) {
+            if (this.id.equals(peerId)) {
+                continue;
+            }
+
+            List<Boolean> bitfield = this.neighborBitfields.get(peerId);
+            if (bitfield == null) {
+                return;
+            }
+
+            for (Boolean hasPiece : bitfield) {
+                if (!hasPiece) {
+                    return;
+                }
+            }
+        }
+
+        shutdownTriggered = true;
+        System.out.println("All peers have finished. Exiting.");
+        System.exit(0);
     }
 }

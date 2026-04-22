@@ -127,6 +127,7 @@ public class Server extends Thread {
         private Socket connection;
         private Integer peerId;
         private Peer peerRef;
+        private final Object writeLock = new Object();
 
         public Handler(Socket connection, Peer peerRef) throws IOException {
             this.connection = connection;
@@ -148,9 +149,8 @@ public class Server extends Thread {
             }
             handlers.put(peerId, this);
 
-            OutputStream outputStream = connection.getOutputStream();
-            outputStream.write(Message.encodeHandshake(this.peerRef.id));
-            outputStream.write(Message.encodeBitfield(this.peerRef.bitfield));
+            sendMessage(Message.encodeHandshake(this.peerRef.id));
+            sendMessage(Message.encodeBitfield(this.peerRef.bitfield));
         }
 
         /**
@@ -167,6 +167,12 @@ public class Server extends Thread {
                     Boolean interest;
                     Integer pieceIndex;
                     switch (message.type()) {
+                        case Message.Type.BITFIELD:
+                            List<Boolean> bitfield = Message.decodeBitfield(message);
+                            this.peerRef.neighborBitfields.put(this.peerId, bitfield);
+                            this.peerRef.maybeShutdown();
+                            break;
+
                         case Message.Type.INTERESTED:
                             interest = Message.decodeInterest(message);
                             assert interest;
@@ -190,7 +196,7 @@ public class Server extends Thread {
                             if (unchokedNeighbors.contains(this.peerId) || (optimisticUnchokedNeighbor.isPresent()
                                     && optimisticUnchokedNeighbor.get().equals(this.peerId))) {
                                 byte[] fileData = this.peerRef.fileReader.getPiece(pieceIndex);
-                                connection.getOutputStream().write(Message.encodePiece(
+                                sendMessage(Message.encodePiece(
                                         new Message.PieceData(pieceIndex, fileData),
                                         this.peerRef.commonConfig.pieceSize()));
                             }
@@ -200,7 +206,7 @@ public class Server extends Thread {
                             pieceIndex = Message.decodeIndexField(message);
                             List<Boolean> otherBitfield = this.peerRef.neighborBitfields.get(peerId);
 
-                            if (!this.peerRef.hasFile) {
+                            if (otherBitfield != null) {
                                 otherBitfield.set(pieceIndex, true);
                             }
 
@@ -216,17 +222,10 @@ public class Server extends Thread {
                 } catch (SocketTimeoutException timeout) {
                     continue;
                 } catch (SocketException e) {
-                    e.printStackTrace();
-                    try {
-                        handlers.remove(this.peerId);
-                        this.connection.close();
-                        return;
-                    } catch (IOException e1) {
-                        e1.printStackTrace();
-                    }
+                    cleanup();
                     return;
                 } catch (BufferUnderflowException e) {
-                    e.printStackTrace();
+                    cleanup();
                     return;
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -236,9 +235,30 @@ public class Server extends Thread {
 
         public void sendChoke(Boolean choked) {
             try {
-                connection.getOutputStream().write(Message.encodeChoke(choked));
-            } catch (Exception e) {
-                e.printStackTrace();
+                sendMessage(Message.encodeChoke(choked));
+            } catch (SocketException e) {
+                cleanup();
+            } catch (IOException e) {
+                cleanup();
+            }
+        }
+
+        private void sendMessage(byte[] message) throws IOException {
+            synchronized (writeLock) {
+                OutputStream output = connection.getOutputStream();
+                output.write(message);
+                output.flush();
+            }
+        }
+
+        private void cleanup() {
+            handlers.remove(this.peerId);
+            peerRef.neighborsInterested.remove(this.peerId);
+            try {
+                if (!this.connection.isClosed()) {
+                    this.connection.close();
+                }
+            } catch (IOException ignored) {
             }
         }
 
